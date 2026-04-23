@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.python-version
+.venv/
+venv/
+env/
+
+# R / RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+~$*.docx
+*.tmp
+
+# Logs
+*.log
+
+# Archive folder
+archive/

@@ -1,0 +1,433 @@
+{
+  "generated_at": "2026-04-22 19:02:28 CEST",
+  "inputs": {
+    "merged_file": "C:/Users/lucas/Desktop/replication matter/data/derived/merged_attendance_wikipedia_fr_2021-07-01_2024-11-18.xlsx",
+    "wiki_file": "C:/Users/lucas/Desktop/replication matter/data/derived/wikipedia_pageviews_fr_2021-07-01_2024-11-18.xlsx"
+  },
+  "sample": {
+    "start": "2021-07-01",
+    "end": "2024-11-18",
+    "observations": 7422,
+    "places": 6,
+    "dates": 1237,
+    "zero_share": 0.151,
+    "mean_attendance": 133.4833,
+    "mean_mobile": 4.2199,
+    "median_mobile": 3
+  },
+  "regression_table": [
+    {
+      "model": "Log mobile only",
+      "log_mobile": "0.5157*** (0.0573)",
+      "log_desktop": "",
+      "fixed_effects": "Place + date",
+      "r2": "0.643",
+      "within_r2": "0.050",
+      "observations": 7422
+    },
+    {
+      "model": "Log mobile + log desktop",
+      "log_mobile": "0.4991*** (0.0543)",
+      "log_desktop": "0.1426*** (0.0396)",
+      "fixed_effects": "Place + date",
+      "r2": "0.645",
+      "within_r2": "0.053",
+      "observations": 7422
+    }
+  ],
+  "twfe_main_table": [
+    {
+      "model": "Mobile only",
+      "log_mobile": "0.1319*** (0.0174)",
+      "log_desktop": "",
+      "log_entrees_lag1": "0.2576*** (0.0496)",
+      "r2": "0.903",
+      "within_r2": "0.080",
+      "observations": 7416
+    },
+    {
+      "model": "Desktop only",
+      "log_mobile": "",
+      "log_desktop": "0.0161 (0.0148)",
+      "log_entrees_lag1": "0.2614*** (0.0495)",
+      "r2": "0.902",
+      "within_r2": "0.070",
+      "observations": 7416
+    },
+    {
+      "model": "Mobile + Desktop",
+      "log_mobile": "0.1314*** (0.0175)",
+      "log_desktop": "0.0089 (0.0147)",
+      "log_entrees_lag1": "0.2575*** (0.0495)",
+      "r2": "0.903",
+      "within_r2": "0.080",
+      "observations": 7416
+    },
+    {
+      "model": "Lead-lag full spec (day 0)",
+      "log_mobile": "0.1355*** (0.0191)",
+      "log_desktop": "",
+      "log_entrees_lag1": "0.2414*** (0.0531)",
+      "r2": "0.908",
+      "within_r2": "0.088",
+      "observations": 7056
+    }
+  ],
+  "robust_table": [
+    {
+      "model": "Place trends + exact date FE",
+      "log_mobile": "0.5085*** (0.0568)",
+      "log_desktop": "0.1467*** (0.0387)",
+      "log_city_mobile": "",
+      "log_city_desktop": "",
+      "r2": "0.648",
+      "within_r2": "0.053",
+      "observations": 7422
+    },
+    {
+      "model": "Positive-attendance days only",
+      "log_mobile": "0.2562*** (0.0260)",
+      "log_desktop": "0.0718*** (0.0213)",
+      "log_city_mobile": "",
+      "log_city_desktop": "",
+      "r2": "0.792",
+      "within_r2": "0.048",
+      "observations": 6273
+    },
+    {
+      "model": "Calendar controls + city pageviews",
+      "log_mobile": "0.5176*** (0.0474)",
+      "log_desktop": "0.1128*** (0.0301)",
+      "log_city_mobile": "0.5787*** (0.1278)",
+      "log_city_desktop": "-0.1700 (0.1311)",
+      "r2": "0.583",
+      "within_r2": "0.062",
+      "observations": 7422
+    },
+    {
+      "model": "Winsorized mobile pageviews",
+      "log_mobile": "0.5026*** (0.0543)",
+      "log_desktop": "0.1423*** (0.0396)",
+      "log_city_mobile": "",
+      "log_city_desktop": "",
+      "r2": "0.645",
+      "within_r2": "0.054",
+      "observations": 7422
+    }
+  ],
+  "timing_table": [
+    {
+      "model": "Same-day log mobile",
+      "same_day_log_mobile": "0.5157*** (0.0573)",
+      "lagged_log_mobile": "",
+      "lead_log_mobile": "",
+      "r2": "0.643",
+      "within_r2": "0.050",
+      "observations": 7422
+    },
+    {
+      "model": "Lagged log mobile (t-1)",
+      "same_day_log_mobile": "",
+      "lagged_log_mobile": "0.4578*** (0.0542)",
+      "lead_log_mobile": "",
+      "r2": "0.640",
+      "within_r2": "0.039",
+      "observations": 7416
+    },
+    {
+      "model": "Lead log mobile (t+1)",
+      "same_day_log_mobile": "",
+      "lagged_log_mobile": "",
+      "lead_log_mobile": "0.3878*** (0.0564)",
+      "r2": "0.635",
+      "within_r2": "0.028",
+      "observations": 7416
+    },
+    {
+      "model": "Joint timing model",
+      "same_day_log_mobile": "0.3960*** (0.0403)",
+      "lagged_log_mobile": "0.3363*** (0.0381)",
+      "lead_log_mobile": "0.2550*** (0.0405)",
+      "r2": "0.656",
+      "within_r2": "0.086",
+      "observations": 7410
+    }
+  ],
+  "autocorr_table": [
+    {
+      "model": "Same-day log mobile",
+      "coefficient": "0.5157*** (0.0573)",
+      "interpretation": "Same-day association",
+      "r2": "0.643",
+      "within_r2": "0.050",
+      "observations": 7422
+    },
+    {
+      "model": "Joint t-1/t/t+1 timing",
+      "coefficient": "0.3960*** (0.0403)",
+      "interpretation": "Same-day association net of adjacent mobile days",
+      "r2": "0.656",
+      "within_r2": "0.086",
+      "observations": 7410
+    },
+    {
+      "model": "AR controls: lagged attendance + 7 mobile lags",
+      "coefficient": "0.2516*** (0.0291)",
+      "interpretation": "Same-day association net of lagged attendance and previous-week mobile traffic",
+      "r2": "0.744",
+      "within_r2": "0.315",
+      "observations": 7380
+    },
+    {
+      "model": "Mobile innovation: residual from 7 mobile lags",
+      "coefficient": "0.3390*** (0.0414)",
+      "interpretation": "Association with unpredictable same-day mobile attention",
+      "r2": "0.633",
+      "within_r2": "0.020",
+      "observations": 7380
+    }
+  ],
+  "preferred_timing_table": [
+    {
+      "model": "Preferred DK lead-lag timing",
+      "same_day_log_mobile": "0.1355*** (0.0191)",
+      "simultaneous_ci_95": "[0.0716, 0.1994]",
+      "r2": "0.908",
+      "within_r2": "0.088",
+      "observations": 7056
+    }
+  ],
+  "placebo_table": [
+    {
+      "test": "Observed same-day log coefficient",
+      "value": "0.5157"
+    },
+    {
+      "test": "Within-date shuffle mean",
+      "value": "-0.0007"
+    },
+    {
+      "test": "Within-date shuffle SD",
+      "value": "0.0200"
+    },
+    {
+      "test": "Within-date shuffle 95th percentile",
+      "value": "0.0329"
+    },
+    {
+      "test": "Share of shuffled coefficients >= observed",
+      "value": "0.0%"
+    },
+    {
+      "test": "Rotated-site placebo coefficient",
+      "value": "0.1206*** (0.0363)"
+    },
+    {
+      "test": "Rotated-site / observed coefficient",
+      "value": "0.234"
+    }
+  ],
+  "lead_lag": {
+    "peak_day": 0,
+    "peak_coef": 0.1355,
+    "day_minus_1": 0.0194,
+    "day_0": 0.1355,
+    "day_plus_1": 0.0412,
+    "r2": 0.9081,
+    "within_r2": 0.0879,
+    "observations": 7056,
+    "local": [
+      {
+        "relative_day": -5,
+        "estimate": "0.0090",
+        "std_error": "0.0220",
+        "ci_low": "-0.0647",
+        "ci_high": "0.0827",
+        "_row": "log_mobile_m5"
+      },
+      {
+        "relative_day": -4,
+        "estimate": "-0.0037",
+        "std_error": "0.0194",
+        "ci_low": "-0.0684",
+        "ci_high": "0.0611",
+        "_row": "log_mobile_m4"
+      },
+      {
+        "relative_day": -3,
+        "estimate": "0.0095",
+        "std_error": "0.0208",
+        "ci_low": "-0.0602",
+        "ci_high": "0.0792",
+        "_row": "log_mobile_m3"
+      },
+      {
+        "relative_day": -2,
+        "estimate": "-0.0060",
+        "std_error": "0.0214",
+        "ci_low": "-0.0775",
+        "ci_high": "0.0654",
+        "_row": "log_mobile_m2"
+      },
+      {
+        "relative_day": -1,
+        "estimate": "0.0194",
+        "std_error": "0.0174",
+        "ci_low": "-0.0390",
+        "ci_high": "0.0778",
+        "_row": "log_mobile_m1"
+      },
+      {
+        "relative_day": 0,
+        "estimate": "0.1355",
+        "std_error": "0.0191",
+        "ci_low": "0.0716",
+        "ci_high": "0.1994",
+        "_row": "log_mobile_0"
+      },
+      {
+        "relative_day": 1,
+        "estimate": "0.0412",
+        "std_error": "0.0222",
+        "ci_low": "-0.0331",
+        "ci_high": "0.1155",
+        "_row": "log_mobile_p1"
+      },
+      {
+        "relative_day": 2,
+        "estimate": "0.0412",
+        "std_error": "0.0176",
+        "ci_low": "-0.0178",
+        "ci_high": "0.1002",
+        "_row": "log_mobile_p2"
+      },
+      {
+        "relative_day": 3,
+        "estimate": "0.0084",
+        "std_error": "0.0209",
+        "ci_low": "-0.0615",
+        "ci_high": "0.0783",
+        "_row": "log_mobile_p3"
+      },
+      {
+        "relative_day": 4,
+        "estimate": "-0.0124",
+        "std_error": "0.0189",
+        "ci_low": "-0.0756",
+        "ci_high": "0.0508",
+        "_row": "log_mobile_p4"
+      },
+      {
+        "relative_day": 5,
+        "estimate": "0.0066",
+        "std_error": "0.0193",
+        "ci_low": "-0.0581",
+        "ci_high": "0.0713",
+        "_row": "log_mobile_p5"
+      }
+    ],
+    "ar_peak_day": 0,
+    "ar_peak_coef": 0.1355,
+    "ar_day_minus_1": 0.0194,
+    "ar_day_0": 0.1355,
+    "ar_day_plus_1": 0.0412,
+    "placebo_peak_day": 0,
+    "placebo_peak_coef": 0.5157,
+    "placebo_day_minus_1": 0.3674,
+    "placebo_day_0": 0.5157,
+    "placebo_day_plus_1": 0.2944,
+    "separate_peak_day": 0,
+    "separate_peak_coef": 0.5157,
+    "separate_day_minus_1": 0.4578,
+    "separate_day_0": 0.5157,
+    "separate_day_plus_1": 0.3878,
+    "joint_peak_day": 0,
+    "joint_peak_coef": 0.2026,
+    "joint_day_minus_1": 0.1401,
+    "joint_day_0": 0.2026,
+    "joint_day_plus_1": 0.0574
+  },
+  "holdout": {
+    "start": "2024-05-23",
+    "scores": [
+      {
+        "n": 1080,
+        "rmse_entries": 220.3554,
+        "mae_entries": 103.9249,
+        "rmse_log": 1.1937,
+        "correlation_entries": 0.4993,
+        "model": "Same-day log mobile + log desktop",
+        "test_start": "2024-05-23"
+      },
+      {
+        "n": 1080,
+        "rmse_entries": 220.5528,
+        "mae_entries": 104.1076,
+        "rmse_log": 1.2017,
+        "correlation_entries": 0.4901,
+        "model": "Lagged log mobile + log desktop",
+        "test_start": "2024-05-23"
+      },
+      {
+        "n": 1080,
+        "rmse_entries": 222.1133,
+        "mae_entries": 104.6084,
+        "rmse_log": 1.1883,
+        "correlation_entries": 0.4933,
+        "model": "Same-day log mobile",
+        "test_start": "2024-05-23"
+      },
+      {
+        "n": 1080,
+        "rmse_entries": 223.1107,
+        "mae_entries": 104.317,
+        "rmse_log": 1.2297,
+        "correlation_entries": 0.4624,
+        "model": "Calendar + city controls",
+        "test_start": "2024-05-23"
+      }
+    ]
+  },
+  "rolling": {
+    "summary": [
+      {
+        "model": "Same-day log mobile + log desktop",
+        "mean_rmse_entries": 202.7412,
+        "mean_mae_entries": 100.0737,
+        "mean_rmse_log": 1.181,
+        "mean_correlation_entries": 0.5593
+      },
+      {
+        "model": "Same-day log mobile",
+        "mean_rmse_entries": 204.0789,
+        "mean_mae_entries": 100.4925,
+        "mean_rmse_log": 1.176,
+        "mean_correlation_entries": 0.5543
+      },
+      {
+        "model": "Lagged log mobile + log desktop",
+        "mean_rmse_entries": 204.297,
+        "mean_mae_entries": 100.4039,
+        "mean_rmse_log": 1.1879,
+        "mean_correlation_entries": 0.5391
+      },
+      {
+        "model": "Calendar + city controls",
+        "mean_rmse_entries": 207.8654,
+        "mean_mae_entries": 101.1036,
+        "mean_rmse_log": 1.2086,
+        "mean_correlation_entries": 0.5158
+      }
+    ],
+    "winners": [
+      {
+        "model": "Same-day log mobile + log desktop",
+        "months_won": 4
+      },
+      {
+        "model": "Lagged log mobile + log desktop",
+        "months_won": 2
+      }
+    ]
+  }
+}

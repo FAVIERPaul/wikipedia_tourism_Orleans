@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Lucas Eustache" />
+
+
+<title>Wikipedia Pageviews and Attendance in Orleans Cultural Sites</title>
+
+<script src="loglog_clean_report_files/header-attrs-2.30/header-attrs.js"></script>
+<script src="loglog_clean_report_files/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="loglog_clean_report_files/bootstrap-3.3.5/css/bootstrap.min.css" rel="stylesheet" />
+<script src="loglog_clean_report_files/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="loglog_clean_report_files/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="loglog_clean_report_files/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="loglog_clean_report_files/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="loglog_clean_report_files/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="loglog_clean_report_files/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="loglog_clean_report_files/navigation-1.1/tabsets.js"></script>
+<link href="loglog_clean_report_files/highlightjs-9.12.0/default.css" rel="stylesheet" />
+<script src="loglog_clean_report_files/highlightjs-9.12.0/highlight.js"></script>
+<link href="loglog_clean_report_files/pagedtable-1.1/css/pagedtable.css" rel="stylesheet" />
+<script src="loglog_clean_report_files/pagedtable-1.1/js/pagedtable.js"></script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Wikipedia Pageviews and Attendance in
+Orleans Cultural Sites</h1>
+<h4 class="author">Lucas Eustache</h4>
+
+</div>
+
+
+<div id="sample" class="section level1">
+<h1>Sample</h1>
+<p>The panel contains 7,422 site-day observations, 6 venues, and 1,237
+dates from 2021-07-01 to 2024-11-18.</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Statistic</th>
+<th align="right">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Observations</td>
+<td align="right">7,422</td>
+</tr>
+<tr class="even">
+<td align="left">Venues</td>
+<td align="right">6</td>
+</tr>
+<tr class="odd">
+<td align="left">Dates</td>
+<td align="right">1,237</td>
+</tr>
+<tr class="even">
+<td align="left">Zero-attendance share</td>
+<td align="right">15.10%</td>
+</tr>
+<tr class="odd">
+<td align="left">Mean attendance</td>
+<td align="right">133.48</td>
+</tr>
+<tr class="even">
+<td align="left">Mean mobile pageviews</td>
+<td align="right">4.22</td>
+</tr>
+<tr class="odd">
+<td align="left">Median mobile pageviews</td>
+<td align="right">3.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="preferred-dk-timing-estimate" class="section level1">
+<h1>Preferred DK Timing Estimate</h1>
+<p>The preferred specification is the log-log TWFE lead-lag model with
+lagged attendance, venue fixed effects, exact-date fixed effects,
+venue-by-year-month fixed effects, and venue-by-day-of-week fixed
+effects. Inference uses Driscoll-Kraay standard errors with a 30-day
+bandwidth and Bonferroni simultaneous 95 percent confidence intervals
+across the 61 lead-lag coefficients.</p>
+<table>
+<colgroup>
+<col width="32%" />
+<col width="21%" />
+<col width="22%" />
+<col width="6%" />
+<col width="11%" />
+<col width="5%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Model</th>
+<th align="right">Day-0 log mobile</th>
+<th align="right">Simultaneous 95% CI</th>
+<th align="right">R2</th>
+<th align="right">Within R2</th>
+<th align="right">N</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Preferred DK lead-lag timing</td>
+<td align="right">0.1355*** (0.0191)</td>
+<td align="right">[0.0716, 0.1994]</td>
+<td align="right">0.908</td>
+<td align="right">0.088</td>
+<td align="right">7056</td>
+</tr>
+</tbody>
+</table>
+<p>The preferred coefficient is 0.1355*** (0.0191). Interpreted in the
+log(1+x) metric, a 1 percent increase in same-day mobile Wikipedia
+pageviews is associated with about a 13.550 percent increase in
+attendance, conditional on the full timing profile and fixed
+effects.</p>
+</div>
+<div id="local-lead-lag-window" class="section level1">
+<h1>Local Lead-Lag Window</h1>
+<table>
+<colgroup>
+<col width="18%" />
+<col width="17%" />
+<col width="12%" />
+<col width="9%" />
+<col width="20%" />
+<col width="21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="right">Relative day</th>
+<th align="right">Estimate</th>
+<th align="right">DK SE</th>
+<th align="right">Simult. CI low</th>
+<th align="right">Simult. CI high</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">log_mobile_m5</td>
+<td align="right">-5</td>
+<td align="right">0.0090</td>
+<td align="right">0.0220</td>
+<td align="right">-0.0647</td>
+<td align="right">0.0827</td>
+</tr>
+<tr class="even">
+<td align="left">log_mobile_m4</td>
+<td align="right">-4</td>
+<td align="right">-0.0037</td>
+<td align="right">0.0194</td>
+<td align="right">-0.0684</td>
+<td align="right">0.0611</td>
+</tr>
+<tr class="odd">
+<td align="left">log_mobile_m3</td>
+<td align="right">-3</td>
+<td align="right">0.0095</td>
+<td align="right">0.0208</td>
+<td align="right">-0.0602</td>
+<td align="right">0.0792</td>
+</tr>
+<tr class="even">
+<td align="left">log_mobile_m2</td>
+<td align="right">-2</td>
+<td align="right">-0.0060</td>
+<td align="right">0.0214</td>
+<td align="right">-0.0775</td>
+<td align="right">0.0654</td>
+</tr>
+<tr class="odd">
+<td align="left">log_mobile_m1</td>
+<td align="right">-1</td>
+<td align="right">0.0194</td>
+<td align="right">0.0174</td>
+<td align="right">-0.0390</td>
+<td align="right">0.0778</td>
+</tr>
+<tr class="even">
+<td align="left">log_mobile_0</td>
+<td align="right">0</td>
+<td align="right">0.1355</td>
+<td align="right">0.0191</td>
+<td align="right">0.0716</td>
+<td align="right">0.1994</td>
+</tr>
+<tr class="odd">
+<td align="left">log_mobile_p1</td>
+<td align="right">1</td>
+<td align="right">0.0412</td>
+<td align="right">0.0222</td>
+<td align="right">-0.0331</td>
+<td align="right">0.1155</td>
+</tr>
+<tr class="even">
+<td align="left">log_mobile_p2</td>
+<td align="right">2</td>
+<td align="right">0.0412</td>
+<td align="right">0.0176</td>
+<td align="right">-0.0178</td>
+<td align="right">0.1002</td>
+</tr>
+<tr class="odd">
+<td align="left">log_mobile_p3</td>
+<td align="right">3</td>
+<td align="right">0.0084</td>
+<td align="right">0.0209</td>
+<td align="right">-0.0615</td>
+<td align="right">0.0783</td>
+</tr>
+<tr class="even">
+<td align="left">log_mobile_p4</td>
+<td align="right">4</td>
+<td align="right">-0.0124</td>
+<td align="right">0.0189</td>
+<td align="right">-0.0756</td>
+<td align="right">0.0508</td>
+</tr>
+<tr class="odd">
+<td align="left">log_mobile_p5</td>
+<td align="right">5</td>
+<td align="right">0.0066</td>
+<td align="right">0.0193</td>
+<td align="right">-0.0581</td>
+<td align="right">0.0713</td>
+</tr>
+</tbody>
+</table>
+<p><img src="../figures/loglog_lead_lag_autocorr_wide_no_title.png" style="max-width:100%;height:auto;"></p>
+</div>
+<div id="serial-correlation-diagnostics" class="section level1">
+<h1>Serial-Correlation Diagnostics</h1>
+<table>
+<colgroup>
+<col width="1%" />
+<col width="27%" />
+<col width="11%" />
+<col width="46%" />
+<col width="3%" />
+<col width="5%" />
+<col width="2%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="left">Diagnostic model</th>
+<th align="right">Day-0 coefficient</th>
+<th align="left">Interpretation</th>
+<th align="right">R2</th>
+<th align="right">Within R2</th>
+<th align="right">N</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2</td>
+<td align="left">Joint t-1/t/t+1 timing</td>
+<td align="right">0.3960*** (0.0403)</td>
+<td align="left">Same-day association net of adjacent mobile days</td>
+<td align="right">0.656</td>
+<td align="right">0.086</td>
+<td align="right">7410</td>
+</tr>
+<tr class="even">
+<td align="left">3</td>
+<td align="left">AR controls: lagged attendance + 7 mobile lags</td>
+<td align="right">0.2516*** (0.0291)</td>
+<td align="left">Same-day association net of lagged attendance and
+previous-week mobile traffic</td>
+<td align="right">0.744</td>
+<td align="right">0.315</td>
+<td align="right">7380</td>
+</tr>
+<tr class="odd">
+<td align="left">4</td>
+<td align="left">Mobile innovation: residual from 7 mobile lags</td>
+<td align="right">0.3390*** (0.0414)</td>
+<td align="left">Association with unpredictable same-day mobile
+attention</td>
+<td align="right">0.633</td>
+<td align="right">0.020</td>
+<td align="right">7380</td>
+</tr>
+</tbody>
+</table>
+<p>These diagnostics explain why the conservative lead-lag coefficient
+is smaller than the simple same-day association. Once serial correlation
+and site-specific seasonality are handled, the defensible estimate is
+the day-0 coefficient from the preferred model.</p>
+</div>
+<div id="placebo-checks" class="section level1">
+<h1>Placebo Checks</h1>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Placebo diagnostic</th>
+<th align="right">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Observed same-day log coefficient</td>
+<td align="right">0.5157</td>
+</tr>
+<tr class="even">
+<td align="left">Within-date shuffle mean</td>
+<td align="right">-0.0007</td>
+</tr>
+<tr class="odd">
+<td align="left">Within-date shuffle SD</td>
+<td align="right">0.0200</td>
+</tr>
+<tr class="even">
+<td align="left">Within-date shuffle 95th percentile</td>
+<td align="right">0.0329</td>
+</tr>
+<tr class="odd">
+<td align="left">Share of shuffled coefficients &gt;= observed</td>
+<td align="right">0.0%</td>
+</tr>
+<tr class="even">
+<td align="left">Rotated-site placebo coefficient</td>
+<td align="right">0.1206*** (0.0363)</td>
+</tr>
+<tr class="odd">
+<td align="left">Rotated-site / observed coefficient</td>
+<td align="right">0.234</td>
+</tr>
+</tbody>
+</table>
+<p><img src="../figures/loglog_placebo_no_title.png" style="max-width:75%;height:auto;"></p>
+</div>
+<div id="nowcasting" class="section level1">
+<h1>Nowcasting</h1>
+<p>The nowcasting exercise evaluates prediction on the attendance scale.
+RMSE is useful when large misses matter operationally, but it is
+complemented with MAE, log-RMSE, and correlations because closures and
+exceptional events can generate large errors that no baseline model can
+predict.</p>
+<table>
+<colgroup>
+<col width="40%" />
+<col width="8%" />
+<col width="8%" />
+<col width="10%" />
+<col width="14%" />
+<col width="5%" />
+<col width="12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Model</th>
+<th align="right">RMSE</th>
+<th align="right">MAE</th>
+<th align="right">Log RMSE</th>
+<th align="right">Correlation</th>
+<th align="right">N</th>
+<th align="right">Test start</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Same-day log mobile + log desktop</td>
+<td align="right">220.36</td>
+<td align="right">103.92</td>
+<td align="right">1.194</td>
+<td align="right">0.499</td>
+<td align="right">1080</td>
+<td align="right">2024-05-23</td>
+</tr>
+<tr class="even">
+<td align="left">Lagged log mobile + log desktop</td>
+<td align="right">220.55</td>
+<td align="right">104.11</td>
+<td align="right">1.202</td>
+<td align="right">0.490</td>
+<td align="right">1080</td>
+<td align="right">2024-05-23</td>
+</tr>
+<tr class="odd">
+<td align="left">Same-day log mobile</td>
+<td align="right">222.11</td>
+<td align="right">104.61</td>
+<td align="right">1.188</td>
+<td align="right">0.493</td>
+<td align="right">1080</td>
+<td align="right">2024-05-23</td>
+</tr>
+<tr class="even">
+<td align="left">Calendar + city controls</td>
+<td align="right">223.11</td>
+<td align="right">104.32</td>
+<td align="right">1.230</td>
+<td align="right">0.462</td>
+<td align="right">1080</td>
+<td align="right">2024-05-23</td>
+</tr>
+</tbody>
+</table>
+<table>
+<colgroup>
+<col width="40%" />
+<col width="11%" />
+<col width="10%" />
+<col width="16%" />
+<col width="20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Model</th>
+<th align="right">Mean RMSE</th>
+<th align="right">Mean MAE</th>
+<th align="right">Mean log RMSE</th>
+<th align="right">Mean correlation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Same-day log mobile + log desktop</td>
+<td align="right">202.74</td>
+<td align="right">100.07</td>
+<td align="right">1.181</td>
+<td align="right">0.559</td>
+</tr>
+<tr class="even">
+<td align="left">Same-day log mobile</td>
+<td align="right">204.08</td>
+<td align="right">100.49</td>
+<td align="right">1.176</td>
+<td align="right">0.554</td>
+</tr>
+<tr class="odd">
+<td align="left">Lagged log mobile + log desktop</td>
+<td align="right">204.30</td>
+<td align="right">100.40</td>
+<td align="right">1.188</td>
+<td align="right">0.539</td>
+</tr>
+<tr class="even">
+<td align="left">Calendar + city controls</td>
+<td align="right">207.87</td>
+<td align="right">101.10</td>
+<td align="right">1.209</td>
+<td align="right">0.516</td>
+</tr>
+</tbody>
+</table>
+<p><img src="../figures/loglog_rolling_rmse_no_title.png" style="max-width:80%;height:auto;"></p>
+</div>
+<div id="interpretation" class="section level1">
+<h1>Interpretation</h1>
+<p>The clean interpretation is narrow: same-day mobile Wikipedia
+attention is a real-time signal of public interest in a venue. It should
+not be presented as a causal effect of Wikipedia browsing on attendance
+and it should not be treated as a visitor counter. Its main value is as
+a contemporaneous nowcasting signal, especially when attendance departs
+from predictable calendar patterns.</p>
+</div>
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

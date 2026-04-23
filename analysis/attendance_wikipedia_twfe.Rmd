@@ -1,0 +1,1537 @@
+---
+title: "Wikipedia Pageviews and Attendance in Orleans Cultural Sites"
+author: "Lucas Eustache"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+params:
+  merged_file: !r NULL
+  wiki_file: !r NULL
+  city_label: "Ville d'Orlean"
+  lead_lag_window: 30
+  nowcast_test_days: 180
+  nowcast_months: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = "center"
+)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(fixest)
+library(knitr)
+
+`%||%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0 || all(is.na(x))) y else x
+}
+
+find_latest_file <- function(directory, pattern) {
+  files <- list.files(directory, pattern = pattern, full.names = TRUE)
+  if (length(files) == 0) {
+    stop(sprintf("No file found in '%s' matching '%s'.", directory, pattern), call. = FALSE)
+  }
+  files[which.max(file.info(files)$mtime)]
+}
+
+resolve_analysis_files <- function(merged_file = NULL, wiki_file = NULL, root = ".") {
+  derived_dir <- file.path(root, "data", "derived")
+  list(
+    merged = merged_file %||% find_latest_file(derived_dir, "^merged_attendance_wikipedia_fr_.*\\.xlsx$"),
+    wiki = wiki_file %||% find_latest_file(derived_dir, "^wikipedia_pageviews_fr_.*\\.xlsx$")
+  )
+}
+
+fmt_num <- function(x, digits = 2) {
+  formatC(x, format = "f", digits = digits, big.mark = ",")
+}
+
+fmt_pct <- function(x, digits = 1) {
+  paste0(fmt_num(100 * x, digits = digits), "%")
+}
+
+fmt_r2 <- function(model, type = "r2", digits = 3) {
+  value <- tryCatch(
+    suppressWarnings(as.numeric(fixest::fitstat(model, type))),
+    error = function(e) NA_real_
+  )
+  if (length(value) == 0 || is.na(value[1])) {
+    ""
+  } else {
+    fmt_num(value[1], digits = digits)
+  }
+}
+
+signif_stars <- function(p_value) {
+  if (is.na(p_value)) {
+    ""
+  } else if (p_value < 0.01) {
+    "***"
+  } else if (p_value < 0.05) {
+    "**"
+  } else if (p_value < 0.10) {
+    "*"
+  } else {
+    ""
+  }
+}
+
+safe_cor <- function(x, y) {
+  ok <- is.finite(x) & is.finite(y)
+  if (sum(ok) < 2 || stats::sd(x[ok]) == 0 || stats::sd(y[ok]) == 0) {
+    return(NA_real_)
+  }
+  stats::cor(x[ok], y[ok])
+}
+
+winsorize_vec <- function(x, probs = c(0.01, 0.99)) {
+  bounds <- stats::quantile(x, probs = probs, na.rm = TRUE, names = FALSE)
+  pmin(pmax(x, bounds[1]), bounds[2])
+}
+
+load_analysis_data <- function(merged_path, wiki_path, city_label = "Ville d'Orlean") {
+  merged <- readxl::read_excel(merged_path, sheet = "merged") |>
+    mutate(date = as.Date(jour, format = "%d/%m/%Y"))
+
+  wiki <- readxl::read_excel(wiki_path, sheet = "daily_pageviews") |>
+    mutate(date = as.Date(jour, format = "%d/%m/%Y"))
+
+  city_daily <- wiki |>
+    filter(lieu == city_label) |>
+    transmute(
+      date,
+      city_mobile = pv_user_mobile,
+      city_desktop = pv_user_desktop,
+      city_all_access = pv_user_all_access
+    )
+
+  if (nrow(city_daily) == 0) {
+    stop(sprintf("City page '%s' was not found in the Wikipedia workbook.", city_label), call. = FALSE)
+  }
+
+  day_labels <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
+  df <- merged |>
+    transmute(
+      date,
+      lieu,
+      nombre_entrees,
+      wikipedia_url,
+      wikipedia_article,
+      pv_user_mobile,
+      pv_user_desktop,
+      pv_user_mobile_web,
+      pv_user_mobile_app,
+      pv_user_all_access
+    ) |>
+    left_join(city_daily, by = "date") |>
+    arrange(lieu, date) |>
+    mutate(
+      dow = factor(
+        day_labels[as.POSIXlt(date)$wday + 1],
+        levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+      ),
+      month = factor(month.abb[as.POSIXlt(date)$mon + 1], levels = month.abb),
+      year = factor(format(date, "%Y")),
+      year_month = factor(format(date, "%Y-%m")),
+      trend_index = as.integer(date - min(date)) + 1L,
+      zero_attendance = nombre_entrees == 0,
+      log_entrees = log1p(nombre_entrees),
+      log_mobile = log1p(pv_user_mobile),
+      log_desktop = log1p(pv_user_desktop),
+      log_city_mobile = log1p(city_mobile),
+      log_city_desktop = log1p(city_desktop)
+    ) |>
+    group_by(lieu) |>
+    mutate(
+      mobile_lag1 = lag(pv_user_mobile, 1),
+      mobile_lead1 = lead(pv_user_mobile, 1),
+      desktop_lag1 = lag(pv_user_desktop, 1),
+      desktop_lead1 = lead(pv_user_desktop, 1)
+    ) |>
+    ungroup() |>
+    mutate(
+      pv_user_mobile_winsor = winsorize_vec(pv_user_mobile),
+      log_mobile_winsor = log1p(pv_user_mobile_winsor)
+    )
+
+  if (anyNA(df$city_mobile) || anyNA(df$city_desktop)) {
+    stop("City controls contain missing values after the merge.", call. = FALSE)
+  }
+
+  df
+}
+
+lead_lag_name <- function(prefix, relative_day) {
+  if (relative_day < 0) {
+    paste0(prefix, "_m", abs(relative_day))
+  } else if (relative_day > 0) {
+    paste0(prefix, "_p", relative_day)
+  } else {
+    paste0(prefix, "_0")
+  }
+}
+
+lead_lag_terms <- function(prefix, window) {
+  vapply(seq(-window, window), function(k) lead_lag_name(prefix, k), character(1))
+}
+
+add_lead_lag_columns <- function(df, var, window, prefix) {
+  out <- df |>
+    arrange(lieu, date) |>
+    group_by(lieu)
+
+  for (k in seq(-window, window)) {
+    nm <- lead_lag_name(prefix, k)
+    out <- out |>
+      mutate(
+        !!nm := if (k < 0) {
+          dplyr::lag(.data[[var]], abs(k))
+        } else if (k > 0) {
+          dplyr::lead(.data[[var]], k)
+        } else {
+          .data[[var]]
+        }
+      )
+  }
+
+  out |>
+    ungroup()
+}
+
+extract_fixest_terms <- function(model, terms, vcov = "DK") {
+  coef_table <- fixest::coeftable(model, vcov = vcov)
+  ci <- tryCatch(
+    suppressWarnings(confint(model, vcov = vcov)),
+    error = function(e) NULL
+  )
+
+  tibble(term = terms) |>
+    rowwise() |>
+    mutate(
+      estimate = if (term %in% rownames(coef_table)) coef_table[term, 1] else NA_real_,
+      std_error = if (term %in% rownames(coef_table)) coef_table[term, 2] else NA_real_,
+      conf_low = if (!is.null(ci) && term %in% rownames(ci)) ci[term, 1] else NA_real_,
+      conf_high = if (!is.null(ci) && term %in% rownames(ci)) ci[term, 2] else NA_real_
+    ) |>
+    ungroup()
+}
+
+format_fixest_term <- function(model, term, vcov = "DK", digits = 2) {
+  coef_table <- fixest::coeftable(model, vcov = vcov)
+  if (!term %in% rownames(coef_table)) {
+    return("")
+  }
+  paste0(
+    fmt_num(coef_table[term, 1], digits = digits),
+    signif_stars(coef_table[term, 4]),
+    " (",
+    fmt_num(coef_table[term, 2], digits = digits),
+    ")"
+  )
+}
+
+score_predictions <- function(actual, predicted) {
+  ok <- is.finite(actual) & is.finite(predicted)
+  tibble(
+    n = sum(ok),
+    rmse = sqrt(mean((actual[ok] - predicted[ok])^2)),
+    mae = mean(abs(actual[ok] - predicted[ok])),
+    correlation = safe_cor(actual[ok], predicted[ok])
+  )
+}
+
+score_nowcast_groups <- function(data, group_cols) {
+  data |>
+    group_by(across(all_of(group_cols))) |>
+    summarise(
+      n = sum(is.finite(nombre_entrees) & is.finite(pred_calendar) & is.finite(pred_same_day_mobile_desktop)),
+      mean_attendance = mean(nombre_entrees, na.rm = TRUE),
+      rmse_calendar = sqrt(mean((nombre_entrees - pred_calendar)^2, na.rm = TRUE)),
+      rmse_lag = sqrt(mean((nombre_entrees - pred_lag_only)^2, na.rm = TRUE)),
+      rmse_same_day_mobile = sqrt(mean((nombre_entrees - pred_same_day_mobile)^2, na.rm = TRUE)),
+      rmse_same_day_mobile_desktop = sqrt(mean((nombre_entrees - pred_same_day_mobile_desktop)^2, na.rm = TRUE)),
+      gain_vs_calendar = rmse_calendar - rmse_same_day_mobile_desktop,
+      pct_gain_vs_calendar = gain_vs_calendar / rmse_calendar,
+      .groups = "drop"
+    )
+}
+
+format_rmse_diagnostic <- function(data) {
+  data |>
+    mutate(
+      mean_attendance = fmt_num(mean_attendance, 2),
+      rmse_calendar = fmt_num(rmse_calendar, 2),
+      rmse_lag = fmt_num(rmse_lag, 2),
+      rmse_same_day_mobile = fmt_num(rmse_same_day_mobile, 2),
+      rmse_same_day_mobile_desktop = fmt_num(rmse_same_day_mobile_desktop, 2),
+      gain_vs_calendar = fmt_num(gain_vs_calendar, 2),
+      pct_gain_vs_calendar = fmt_pct(pct_gain_vs_calendar, 1)
+    )
+}
+
+fit_nowcast_models <- function(train_df) {
+  list(
+    calendar = stats::lm(
+      nombre_entrees ~ lieu + dow + month + lieu:trend_index + city_mobile + city_desktop,
+      data = train_df
+    ),
+    lag_only = stats::lm(
+      nombre_entrees ~ lieu + dow + month + lieu:trend_index + city_mobile + city_desktop +
+        mobile_lag1 + desktop_lag1,
+      data = train_df |>
+        filter(!is.na(mobile_lag1), !is.na(desktop_lag1))
+    ),
+    same_day_mobile = stats::lm(
+      nombre_entrees ~ lieu + dow + month + lieu:trend_index + city_mobile + city_desktop +
+        pv_user_mobile,
+      data = train_df
+    ),
+    same_day_mobile_desktop = stats::lm(
+      nombre_entrees ~ lieu + dow + month + lieu:trend_index + city_mobile + city_desktop +
+        pv_user_mobile + pv_user_desktop,
+      data = train_df
+    )
+  )
+}
+
+predict_nowcast_models <- function(models, new_df) {
+  tibble(
+    pred_calendar = as.numeric(stats::predict(models$calendar, newdata = new_df)),
+    pred_lag_only = as.numeric(stats::predict(models$lag_only, newdata = new_df)),
+    pred_same_day_mobile = as.numeric(stats::predict(models$same_day_mobile, newdata = new_df)),
+    pred_same_day_mobile_desktop = as.numeric(stats::predict(models$same_day_mobile_desktop, newdata = new_df))
+  )
+}
+
+add_baseline_predictability <- function(train_df, test_df, models, n_groups = 3) {
+  train_scored <- train_df |>
+    mutate(pred_calendar_train = as.numeric(stats::predict(models$calendar, newdata = train_df)))
+
+  difficulty_by_lieu_dow <- train_scored |>
+    group_by(lieu, dow) |>
+    summarise(
+      baseline_train_rmse_lieu_dow = sqrt(mean((nombre_entrees - pred_calendar_train)^2, na.rm = TRUE)),
+      .groups = "drop"
+    )
+
+  difficulty_by_lieu <- train_scored |>
+    group_by(lieu) |>
+    summarise(
+      baseline_train_rmse_lieu = sqrt(mean((nombre_entrees - pred_calendar_train)^2, na.rm = TRUE)),
+      .groups = "drop"
+    )
+
+  test_df |>
+    left_join(difficulty_by_lieu_dow, by = c("lieu", "dow")) |>
+    left_join(difficulty_by_lieu, by = "lieu") |>
+    mutate(
+      baseline_train_rmse = coalesce(baseline_train_rmse_lieu_dow, baseline_train_rmse_lieu),
+      baseline_difficulty_rank = dplyr::ntile(baseline_train_rmse, n_groups),
+      baseline_predictability = factor(
+        case_when(
+          baseline_difficulty_rank == 1 ~ "More predictable baseline",
+          baseline_difficulty_rank == 2 ~ "Middle baseline predictability",
+          TRUE ~ "Less predictable baseline"
+        ),
+        levels = c(
+          "More predictable baseline",
+          "Middle baseline predictability",
+          "Less predictable baseline"
+        )
+      )
+    )
+}
+
+run_holdout_nowcasting <- function(df, test_days = 180) {
+  unique_dates <- sort(unique(df$date))
+  start_index <- max(1, length(unique_dates) - test_days + 1)
+  test_start <- unique_dates[start_index]
+
+  train_df <- df |>
+    filter(date < test_start)
+  test_df <- df |>
+    filter(date >= test_start)
+
+  models <- fit_nowcast_models(train_df)
+  predictions <- predict_nowcast_models(models, test_df)
+
+  bind_rows(
+    score_predictions(test_df$nombre_entrees, predictions$pred_calendar) |>
+      mutate(model = "Calendar + city controls"),
+    score_predictions(test_df$nombre_entrees, predictions$pred_lag_only) |>
+      mutate(model = "Lagged mobile + lagged desktop"),
+    score_predictions(test_df$nombre_entrees, predictions$pred_same_day_mobile) |>
+      mutate(model = "Same-day mobile"),
+    score_predictions(test_df$nombre_entrees, predictions$pred_same_day_mobile_desktop) |>
+      mutate(model = "Same-day mobile + desktop")
+  ) |>
+    mutate(test_start = as.character(test_start)) |>
+    select(model, everything()) |>
+    arrange(rmse)
+}
+
+run_monthly_nowcasting <- function(df, n_test_months = 6) {
+  month_start <- as.Date(paste0(format(df$date, "%Y-%m"), "-01"))
+  candidate_months <- sort(unique(month_start))
+  test_months <- utils::tail(candidate_months, n_test_months)
+
+  detail <- lapply(test_months, function(current_month) {
+    next_month <- seq(current_month, by = "month", length.out = 2)[2]
+
+    train_df <- df |>
+      filter(date < current_month)
+    test_df <- df |>
+      filter(date >= current_month, date < next_month)
+
+    models <- fit_nowcast_models(train_df)
+    predictions <- predict_nowcast_models(models, test_df)
+
+    bind_rows(
+      score_predictions(test_df$nombre_entrees, predictions$pred_calendar) |>
+        mutate(model = "Calendar + city controls"),
+      score_predictions(test_df$nombre_entrees, predictions$pred_lag_only) |>
+        mutate(model = "Lagged mobile + lagged desktop"),
+      score_predictions(test_df$nombre_entrees, predictions$pred_same_day_mobile) |>
+        mutate(model = "Same-day mobile"),
+      score_predictions(test_df$nombre_entrees, predictions$pred_same_day_mobile_desktop) |>
+        mutate(model = "Same-day mobile + desktop")
+    ) |>
+      mutate(test_month = format(current_month, "%Y-%m")) |>
+      select(test_month, everything())
+  })
+
+  detail <- bind_rows(detail)
+
+  summary <- detail |>
+    group_by(model) |>
+    summarise(
+      mean_rmse = mean(rmse, na.rm = TRUE),
+      mean_mae = mean(mae, na.rm = TRUE),
+      mean_correlation = mean(correlation, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    arrange(mean_rmse)
+
+  list(detail = detail, summary = summary)
+}
+
+input_path <- tryCatch(knitr::current_input(), error = function(e) "")
+analysis_dir <- if (nzchar(input_path)) {
+  normalizePath(dirname(input_path), winslash = "/", mustWork = FALSE)
+} else if (basename(getwd()) == "analysis") {
+  normalizePath(getwd(), winslash = "/", mustWork = FALSE)
+} else {
+  normalizePath(file.path(getwd(), "analysis"), winslash = "/", mustWork = FALSE)
+}
+project_root <- normalizePath(file.path(analysis_dir, ".."), winslash = "/", mustWork = FALSE)
+```
+
+# Purpose
+
+This report asks a narrow question with a practical motivation: **do French Wikipedia pageviews help track and nowcast daily attendance in Orleans cultural sites?**
+
+The logic is straightforward. If people search for a site on mobile on the day they visit, then same-day mobile pageviews may contain information about physical attendance on that day. That does not mean that pageviews are a direct count of visitors. The purpose of the analysis is therefore more modest: identify whether pageviews behave like a useful same-day signal, test whether that result survives stronger specifications, and evaluate whether they improve short-run prediction.
+
+The report is written as a sequence of small analytical steps. Each section first shows the code used for that step, then explains what the output means in plain English.
+
+# Load and Prepare the Data
+
+```{r load-data}
+# 1. Resolve the latest derived workbooks inside data/derived/.
+#    This keeps the report reproducible even if the file suffix changes.
+paths <- resolve_analysis_files(
+  merged_file = params$merged_file,
+  wiki_file = params$wiki_file,
+  root = project_root
+)
+
+# 2. Load the merged local/Wikipedia dataset and merge in the city page
+#    ("Ville d'Orlean") as date-level controls.
+df <- load_analysis_data(
+  merged_path = paths$merged,
+  wiki_path = paths$wiki,
+  city_label = params$city_label
+)
+
+# 3. Keep a stable sort order. This matters for the lead/lag construction
+#    and for the readability of the printed tables.
+df <- df |>
+  arrange(date, lieu)
+
+# 4. Quick structural check: show the column names that the rest of the
+#    analysis will rely on.
+names(df)
+```
+
+The report uses two Excel workbooks from `data/derived/`: the merged site-level dataset and the full Wikipedia workbook. The city page is merged back in at the date level so that later specifications can control for shocks that move general interest in Orleans rather than interest in a specific site.
+
+At this stage the dataset is the analytical panel used throughout the report. It contains daily attendance by site, site-level pageviews, and city-level pageviews for the same dates.
+
+# Sample Overview
+
+```{r sample-overview}
+# Compute the key sample dimensions once so they can be reused later
+# both in tables and in inline comments.
+sample_start <- min(df$date)
+sample_end <- max(df$date)
+n_obs <- nrow(df)
+n_places <- dplyr::n_distinct(df$lieu)
+n_dates <- dplyr::n_distinct(df$date)
+zero_share <- mean(df$zero_attendance)
+
+overview_table <- tibble(
+  metric = c(
+    "Start date",
+    "End date",
+    "Observations",
+    "Distinct dates",
+    "Distinct places",
+    "Share of zero-attendance days"
+  ),
+  value = c(
+    format(sample_start, "%Y-%m-%d"),
+    format(sample_end, "%Y-%m-%d"),
+    fmt_num(n_obs, 0),
+    fmt_num(n_dates, 0),
+    fmt_num(n_places, 0),
+    fmt_pct(zero_share, 1)
+  )
+)
+
+kable(overview_table, align = c("l", "r"))
+```
+
+The panel covers `r format(sample_start, "%Y-%m-%d")` to `r format(sample_end, "%Y-%m-%d")`, with `r fmt_num(n_obs, 0)` site-day observations across `r fmt_num(n_places, 0)` sites. A non-trivial share of the sample is equal to zero attendance (`r fmt_pct(zero_share, 1)`), which matters for interpretation: some of those zeros correspond to genuine closures or empty days, but some may reflect imputation choices in the construction script rather than fully observed zero traffic.
+
+That point does not invalidate the exercise, but it is one reason to read the coefficients as evidence on signal quality rather than as a precise structural elasticity of true visitor flows.
+
+# Descriptive Statistics
+
+```{r descriptive-statistics}
+# Summarise the main attendance and pageview variables.
+desc_stats <- tibble(
+  variable = c(
+    "Attendance",
+    "Site mobile pageviews",
+    "Site desktop pageviews",
+    "Site all-access pageviews",
+    "City mobile pageviews",
+    "City desktop pageviews"
+  ),
+  mean = c(
+    mean(df$nombre_entrees),
+    mean(df$pv_user_mobile),
+    mean(df$pv_user_desktop),
+    mean(df$pv_user_all_access),
+    mean(df$city_mobile),
+    mean(df$city_desktop)
+  ),
+  sd = c(
+    stats::sd(df$nombre_entrees),
+    stats::sd(df$pv_user_mobile),
+    stats::sd(df$pv_user_desktop),
+    stats::sd(df$pv_user_all_access),
+    stats::sd(df$city_mobile),
+    stats::sd(df$city_desktop)
+  ),
+  p10 = c(
+    stats::quantile(df$nombre_entrees, 0.10),
+    stats::quantile(df$pv_user_mobile, 0.10),
+    stats::quantile(df$pv_user_desktop, 0.10),
+    stats::quantile(df$pv_user_all_access, 0.10),
+    stats::quantile(df$city_mobile, 0.10),
+    stats::quantile(df$city_desktop, 0.10)
+  ),
+  median = c(
+    stats::median(df$nombre_entrees),
+    stats::median(df$pv_user_mobile),
+    stats::median(df$pv_user_desktop),
+    stats::median(df$pv_user_all_access),
+    stats::median(df$city_mobile),
+    stats::median(df$city_desktop)
+  ),
+  p90 = c(
+    stats::quantile(df$nombre_entrees, 0.90),
+    stats::quantile(df$pv_user_mobile, 0.90),
+    stats::quantile(df$pv_user_desktop, 0.90),
+    stats::quantile(df$pv_user_all_access, 0.90),
+    stats::quantile(df$city_mobile, 0.90),
+    stats::quantile(df$city_desktop, 0.90)
+  )
+) |>
+  mutate(across(where(is.numeric), ~ fmt_num(.x, 2)))
+
+kable(desc_stats, align = c("l", rep("r", 5)))
+```
+
+The scale difference between site-level and city-level pageviews is large by construction. Average daily attendance is `r fmt_num(mean(df$nombre_entrees), 2)`, average site mobile traffic is only `r fmt_num(mean(df$pv_user_mobile), 2)` pageviews, and average Orleans city mobile traffic is `r fmt_num(mean(df$city_mobile), 2)`. This is useful later because the city page can proxy for common local shocks such as tourism, major events, or general interest in the city, but it also means that the site-level signal is inherently noisy.
+
+In practical terms, the descriptive statistics already suggest that any predictive use of Wikipedia will rely on a low-count, high-variance signal. The question is therefore not whether pageviews perfectly track visitors, but whether they add useful information on top of simple calendar effects.
+
+# Descriptives by Site
+
+```{r by-place-statistics}
+# Site heterogeneity matters, so we summarise each place separately.
+by_place_stats <- df |>
+  group_by(lieu) |>
+  summarise(
+    mean_attendance = mean(nombre_entrees),
+    sd_attendance = stats::sd(nombre_entrees),
+    zero_share = mean(zero_attendance),
+    mean_site_mobile = mean(pv_user_mobile),
+    mean_site_desktop = mean(pv_user_desktop),
+    corr_attendance_mobile = safe_cor(nombre_entrees, pv_user_mobile),
+    corr_attendance_desktop = safe_cor(nombre_entrees, pv_user_desktop),
+    .groups = "drop"
+  ) |>
+  arrange(desc(mean_attendance)) |>
+  mutate(
+    across(-c(lieu, zero_share), ~ fmt_num(.x, 2)),
+    zero_share = fmt_pct(zero_share, 1)
+  )
+
+kable(by_place_stats, align = c("l", rep("r", 6)))
+```
+
+The site-level table makes clear why fixed effects are necessary. Sites differ sharply in scale, in how often they record zeros, and in the raw correlation between attendance and Wikipedia traffic. A pooled regression without place controls would mostly compare very different institutions to one another, which is not the target estimand here.
+
+The more credible comparison is within the same calendar day across sites, after removing persistent differences across locations.
+
+# Sample Evolution Over Time
+
+```{r yearly-summary}
+# A yearly summary is useful to check whether broad shifts in the sample
+# coincide with obvious changes in pageview intensity.
+year_summary <- df |>
+  mutate(year = format(date, "%Y")) |>
+  group_by(year) |>
+  summarise(
+    mean_attendance = mean(nombre_entrees),
+    mean_site_mobile = mean(pv_user_mobile),
+    mean_city_mobile = mean(city_mobile),
+    zero_share = mean(zero_attendance),
+    .groups = "drop"
+  ) |>
+  mutate(
+    mean_attendance = fmt_num(mean_attendance, 2),
+    mean_site_mobile = fmt_num(mean_site_mobile, 2),
+    mean_city_mobile = fmt_num(mean_city_mobile, 2),
+    zero_share = fmt_pct(zero_share, 1)
+  )
+
+kable(year_summary, align = c("l", rep("r", 4)))
+```
+
+This table is descriptive only, but it is still useful. It helps distinguish a same-day cross-site signal from slower sample-wide changes. If, for example, both attendance and pageviews drift upward over time for reasons unrelated to the immediate visit decision, the fixed-effects specifications below must absorb that common variation.
+
+```{r aggregate-dynamics}
+# Aggregate daily series are normalised to mean 100 so that variables
+# measured on different scales can still be compared visually.
+daily_indices <- df |>
+  group_by(date) |>
+  summarise(
+    attendance = mean(nombre_entrees),
+    site_mobile = mean(pv_user_mobile),
+    city_mobile = mean(city_mobile),
+    .groups = "drop"
+  ) |>
+  mutate(
+    attendance_index = 100 * attendance / mean(attendance),
+    site_mobile_index = 100 * site_mobile / mean(site_mobile),
+    city_mobile_index = 100 * city_mobile / mean(city_mobile)
+  ) |>
+  select(date, attendance_index, site_mobile_index, city_mobile_index) |>
+  pivot_longer(-date, names_to = "series", values_to = "index")
+
+ggplot(daily_indices, aes(x = date, y = index, color = series)) +
+  geom_line(linewidth = 0.7, alpha = 0.9) +
+  scale_color_manual(
+    values = c(
+      attendance_index = "#1b4332",
+      site_mobile_index = "#2d6a4f",
+      city_mobile_index = "#b08968"
+    ),
+    labels = c(
+      attendance_index = "Attendance",
+      site_mobile_index = "Site mobile pageviews",
+      city_mobile_index = "City mobile pageviews"
+    )
+  ) +
+  labs(
+    title = "Aggregate daily dynamics (mean = 100)",
+    x = NULL,
+    y = "Index",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The aggregate figure is deliberately descriptive rather than causal. It shows that attendance, site pageviews, and city pageviews often move together, but that comovement could reflect many things: seasonality, tourism, school calendars, city-wide events, or broad shifts in information demand. The role of the econometric sections is precisely to strip out as much of that common movement as possible.
+
+# Identification Strategy
+
+The core specification is:
+
+$$
+\text{Attendance}_{it} = \beta \cdot \text{MobilePageviews}_{it} + \alpha_i + \delta_t + \varepsilon_{it},
+$$
+
+where $i$ indexes sites and $t$ indexes dates. The site fixed effects $\alpha_i$ remove persistent differences across places, and the date fixed effects $\delta_t$ remove all shocks that are common to every site on a given day.
+
+This is an intentionally demanding design. Once exact-date fixed effects are included, the coefficient is identified only from **within-day differences across sites**. In other words, on a given day, sites with higher mobile Wikipedia traffic are compared with other sites observed on exactly that same day.
+
+That does not prove causality. It does, however, ask a strong question: conditional on the entire day-level environment, do site-specific mobile pageviews still line up with site-specific attendance?
+
+# Visual Evidence After Removing Fixed Effects
+
+```{r residualized-scatter}
+# Residualise both attendance and mobile pageviews using the same fixed
+# effects, then inspect whether their within-day relationship remains.
+m_att_feonly <- feols(
+  nombre_entrees ~ 1 | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_mobile_feonly <- feols(
+  pv_user_mobile ~ 1 | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+within_raw <- df |>
+  mutate(
+    attendance_within = resid(m_att_feonly),
+    mobile_within = resid(m_mobile_feonly)
+  )
+
+ggplot(within_raw, aes(x = mobile_within, y = attendance_within)) +
+  geom_point(alpha = 0.35, color = "#2d6a4f") +
+  geom_smooth(method = "lm", se = FALSE, color = "#8d0801", linewidth = 1) +
+  labs(
+    title = "Residualized same-day relationship",
+    subtitle = "Both variables are net of site and exact-date fixed effects",
+    x = "Residualized site mobile pageviews",
+    y = "Residualized attendance"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+This plot is the cleanest visual version of the main idea. The raw levels are gone. What remains is only the within-day, within-site-deviation component once place and date averages have been removed. If the cloud still slopes upward, that is exactly the kind of signal the fixed-effects model will capture.
+
+```{r residualized-bins}
+# The binned version is easier to read than the full cloud and shows
+# whether the within-day pattern is monotonic.
+within_binned <- within_raw |>
+  mutate(bin = dplyr::ntile(mobile_within, 20)) |>
+  group_by(bin) |>
+  summarise(
+    mean_mobile_within = mean(mobile_within, na.rm = TRUE),
+    mean_attendance_within = mean(attendance_within, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+ggplot(within_binned, aes(x = mean_mobile_within, y = mean_attendance_within)) +
+  geom_point(size = 2.5, color = "#2d6a4f") +
+  geom_line(color = "#2d6a4f", linewidth = 0.8) +
+  labs(
+    title = "Binned within-day relationship",
+    subtitle = "Twenty bins of residualized site mobile pageviews",
+    x = "Residualized site mobile pageviews",
+    y = "Residualized attendance"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The binned plot makes the same point in a more readable way. If the points rise steadily, the relationship is not being driven by only a handful of extreme outliers. That matters because site pageviews are low-count variables, so robustness to noisy spikes is an important part of the credibility check.
+
+# Main Specifications
+
+```{r estimate-main-models}
+# Estimate the main models used throughout the report.
+# All standard errors below are Driscoll-Kraay to allow for temporal
+# dependence in the panel.
+m_same_day <- feols(
+  nombre_entrees ~ pv_user_mobile | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_desktop_compare <- feols(
+  nombre_entrees ~ pv_user_mobile + pv_user_desktop | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_log <- feols(
+  log_entrees ~ log_mobile + log_desktop | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_ppml <- fepois(
+  nombre_entrees ~ pv_user_mobile + pv_user_desktop | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+main_table <- tibble(
+  model = c(
+    "Same-day mobile only",
+    "Same-day mobile + desktop",
+    "Log-log OLS",
+    "Poisson PML"
+  ),
+  mobile = c(
+    format_fixest_term(m_same_day, "pv_user_mobile"),
+    format_fixest_term(m_desktop_compare, "pv_user_mobile"),
+    "",
+    format_fixest_term(m_ppml, "pv_user_mobile", digits = 4)
+  ),
+  desktop = c(
+    "",
+    format_fixest_term(m_desktop_compare, "pv_user_desktop"),
+    "",
+    format_fixest_term(m_ppml, "pv_user_desktop", digits = 4)
+  ),
+  log_mobile = c(
+    "",
+    "",
+    format_fixest_term(m_log, "log_mobile", digits = 4),
+    ""
+  ),
+  log_desktop = c(
+    "",
+    "",
+    format_fixest_term(m_log, "log_desktop", digits = 4),
+    ""
+  ),
+  fixed_effects = c(
+    "Place + date",
+    "Place + date",
+    "Place + date",
+    "Place + date"
+  ),
+  r2 = c(
+    fmt_r2(m_same_day, "r2"),
+    fmt_r2(m_desktop_compare, "r2"),
+    fmt_r2(m_log, "r2"),
+    fmt_r2(m_ppml, "pr2")
+  ),
+  within_r2 = c(
+    fmt_r2(m_same_day, "wr2"),
+    fmt_r2(m_desktop_compare, "wr2"),
+    fmt_r2(m_log, "wr2"),
+    fmt_r2(m_ppml, "wpr2")
+  ),
+  observations = c(
+    nobs(m_same_day),
+    nobs(m_desktop_compare),
+    nobs(m_log),
+    nobs(m_ppml)
+  )
+) |>
+  mutate(observations = fmt_num(observations, 0))
+
+kable(main_table, align = c("l", rep("r", 8)))
+```
+
+In all regression tables below, stars denote `*** p < 0.01`, `** p < 0.05`, and `* p < 0.10`. The R2 columns report the overall fit and the within R2 after fixed effects; for the Poisson model, the reported fit statistics should be read as pseudo-fit diagnostics rather than OLS variance decomposition.
+
+The level specification is useful as a signal test, but it should not be read literally as a one-pageview causal effect. The coefficient on same-day site mobile pageviews is `r format_fixest_term(m_same_day, "pv_user_mobile")`. Because the model includes both place and exact-date fixed effects, this is a within-day cross-site comparison. Mechanically, the coefficient says that, on the same date, a one-pageview difference in site mobile traffic is associated with about `r fmt_num(fixest::coeftable(m_same_day, vcov = "DK")["pv_user_mobile", 1], 2)` more entries. Substantively, that number is large because venue-specific Wikipedia pageviews are very low-count while attendance is much larger; one observed pageview is better interpreted as a proxy for a broader latent attention shock than as one individual visitor.
+
+The most informative comparison in the table is between the first two columns. When desktop pageviews are added, the mobile coefficient barely moves, from `r format_fixest_term(m_same_day, "pv_user_mobile")` to `r format_fixest_term(m_desktop_compare, "pv_user_mobile")`, while the desktop coefficient itself is only `r format_fixest_term(m_desktop_compare, "pv_user_desktop")`. The within R2 also changes little, from `r fmt_r2(m_same_day, "wr2")` to `r fmt_r2(m_desktop_compare, "wr2")`. In other words, the central result is not being carried by desktop traffic.
+
+The log-log specification is the cleaner substantive scale for interpretation. It returns a mobile coefficient of `r format_fixest_term(m_log, "log_mobile", digits = 4)`, meaning that a 1% increase in mobile pageviews is associated with roughly a `r fmt_num(100 * fixest::coeftable(m_log, vcov = "DK")["log_mobile", 1], 1)`% increase in attendance, conditional on place and date fixed effects. The Poisson model also keeps the mobile term positive and precisely estimated at `r format_fixest_term(m_ppml, "pv_user_mobile", digits = 4)`. Taken together, the level, log, and count specifications all point in the same direction: same-day mobile pageviews are informative about same-day attendance, but the log-log estimate is the preferred effect-size interpretation.
+
+# Robustness Checks
+
+```{r estimate-robust-models}
+# The robustness section asks whether the core result survives several
+# reasonable changes in the specification.
+m_trends <- feols(
+  nombre_entrees ~ pv_user_mobile + pv_user_desktop | lieu + date + lieu[trend_index],
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_positive <- feols(
+  nombre_entrees ~ pv_user_mobile + pv_user_desktop | lieu + date,
+  data = df |>
+    filter(nombre_entrees > 0),
+  panel.id = ~ lieu + date
+)
+
+m_city_controls <- feols(
+  nombre_entrees ~ pv_user_mobile + pv_user_desktop + city_mobile + city_desktop |
+    lieu + year_month + dow + lieu[trend_index],
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_city_controls_log <- feols(
+  log_entrees ~ log_mobile + log_desktop + log_city_mobile + log_city_desktop |
+    lieu + year_month + dow + lieu[trend_index],
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+m_winsor <- feols(
+  nombre_entrees ~ pv_user_mobile_winsor + pv_user_desktop | lieu + date,
+  data = df,
+  panel.id = ~ lieu + date
+)
+
+robust_table <- tibble(
+  model = c(
+    "Place trends + exact date FE",
+    "Positive-attendance days only",
+    "Calendar controls + city pageviews",
+    "Log-log with city pageviews",
+    "Winsorized mobile pageviews"
+  ),
+  site_mobile = c(
+    format_fixest_term(m_trends, "pv_user_mobile"),
+    format_fixest_term(m_positive, "pv_user_mobile"),
+    format_fixest_term(m_city_controls, "pv_user_mobile"),
+    "",
+    format_fixest_term(m_winsor, "pv_user_mobile_winsor")
+  ),
+  site_desktop = c(
+    format_fixest_term(m_trends, "pv_user_desktop"),
+    format_fixest_term(m_positive, "pv_user_desktop"),
+    format_fixest_term(m_city_controls, "pv_user_desktop"),
+    "",
+    format_fixest_term(m_winsor, "pv_user_desktop")
+  ),
+  city_mobile = c(
+    "",
+    "",
+    format_fixest_term(m_city_controls, "city_mobile"),
+    "",
+    ""
+  ),
+  city_desktop = c(
+    "",
+    "",
+    format_fixest_term(m_city_controls, "city_desktop"),
+    "",
+    ""
+  ),
+  log_terms = c(
+    "",
+    "",
+    "",
+    paste0(
+      "site mobile: ", format_fixest_term(m_city_controls_log, "log_mobile", digits = 4),
+      "; site desktop: ", format_fixest_term(m_city_controls_log, "log_desktop", digits = 4)
+    ),
+    ""
+  ),
+  r2 = c(
+    fmt_r2(m_trends, "r2"),
+    fmt_r2(m_positive, "r2"),
+    fmt_r2(m_city_controls, "r2"),
+    fmt_r2(m_city_controls_log, "r2"),
+    fmt_r2(m_winsor, "r2")
+  ),
+  within_r2 = c(
+    fmt_r2(m_trends, "wr2"),
+    fmt_r2(m_positive, "wr2"),
+    fmt_r2(m_city_controls, "wr2"),
+    fmt_r2(m_city_controls_log, "wr2"),
+    fmt_r2(m_winsor, "wr2")
+  ),
+  observations = c(
+    nobs(m_trends),
+    nobs(m_positive),
+    nobs(m_city_controls),
+    nobs(m_city_controls_log),
+    nobs(m_winsor)
+  )
+) |>
+  mutate(observations = fmt_num(observations, 0))
+
+kable(robust_table, align = c("l", rep("r", 8)))
+```
+
+These robustness checks answer different concerns.
+
+First, adding place-specific linear trends asks whether the result is really just a slow-moving drift within each site. Second, dropping zero-attendance days checks that the result is not mechanically driven by the large block of zeros. Third, replacing exact-date fixed effects with a weaker but estimable set of calendar controls allows the Orleans city page to enter the regression directly. This is the correct place to test city-level controls, because a city variable that only varies by date is perfectly collinear with exact-date fixed effects.
+
+The actual estimates are stable. The mobile coefficient is `r format_fixest_term(m_trends, "pv_user_mobile")` with place-specific trends, `r format_fixest_term(m_positive, "pv_user_mobile")` when zero-attendance days are excluded, `r format_fixest_term(m_city_controls, "pv_user_mobile")` when city pageviews enter directly, and `r format_fixest_term(m_winsor, "pv_user_mobile_winsor")` after winsorising extreme mobile values. That range is narrow enough to say that the central result is not fragile.
+
+The city-control model is especially informative. Once exact-date fixed effects are relaxed to allow date-level controls, the site mobile coefficient remains large and significant, while the Orleans city page also enters with `r format_fixest_term(m_city_controls, "city_mobile")`. This means there is both a site-specific signal and a broader city-level attention component in the data.
+
+# Placebo and Falsification Checks
+
+```{r placebo-checks}
+# Placebo 1: shuffle site mobile pageviews across places within each date.
+# If the identification truly relies on the correct site-page alignment,
+# this placebo should destroy the coefficient.
+set.seed(123)
+placebo_draws <- 200
+placebo_shuffle_coefs <- numeric(placebo_draws)
+
+for (b in seq_len(placebo_draws)) {
+  placebo_df <- df |>
+    group_by(date) |>
+    mutate(
+      pv_user_mobile_placebo = sample(pv_user_mobile, size = dplyr::n(), replace = FALSE)
+    ) |>
+    ungroup()
+
+  placebo_model <- feols(
+    nombre_entrees ~ pv_user_mobile_placebo | lieu + date,
+    data = placebo_df,
+    panel.id = ~ lieu + date
+  )
+
+  placebo_shuffle_coefs[b] <- coef(placebo_model)[["pv_user_mobile_placebo"]]
+}
+
+# Placebo 2: rotate the entire mobile series across sites.
+# This preserves date-level demand conditions but assigns each site the
+# wrong Wikipedia series.
+site_order <- sort(unique(df$lieu))
+rotation_map <- setNames(c(site_order[-1], site_order[1]), site_order)
+
+placebo_rotation_df <- df |>
+  transmute(
+    date,
+    lieu,
+    nombre_entrees,
+    source_lieu = rotation_map[lieu]
+  ) |>
+  left_join(
+    df |>
+      transmute(
+        date,
+        source_lieu = lieu,
+        pv_user_mobile_rotated = pv_user_mobile
+      ),
+    by = c("date", "source_lieu")
+  )
+
+m_rotated_placebo <- feols(
+  nombre_entrees ~ pv_user_mobile_rotated | lieu + date,
+  data = placebo_rotation_df,
+  panel.id = ~ lieu + date
+)
+
+observed_mobile_coef <- coef(m_same_day)[["pv_user_mobile"]]
+placebo_exceed_share <- mean(placebo_shuffle_coefs >= observed_mobile_coef)
+placebo_rotation_ratio <- coef(m_rotated_placebo)[["pv_user_mobile_rotated"]] / observed_mobile_coef
+
+placebo_table <- tibble(
+  test = c(
+    "Observed same-day coefficient",
+    "Within-date shuffle mean",
+    "Within-date shuffle SD",
+    "Within-date shuffle 95th percentile",
+    "Share of shuffled coefficients >= observed",
+    "Rotated-site placebo coefficient",
+    "Rotated-site / observed coefficient"
+  ),
+  value = c(
+    fmt_num(observed_mobile_coef, 2),
+    fmt_num(mean(placebo_shuffle_coefs), 2),
+    fmt_num(stats::sd(placebo_shuffle_coefs), 2),
+    fmt_num(stats::quantile(placebo_shuffle_coefs, 0.95), 2),
+    fmt_pct(placebo_exceed_share, 1),
+    format_fixest_term(m_rotated_placebo, "pv_user_mobile_rotated"),
+    fmt_num(placebo_rotation_ratio, 2)
+  )
+)
+
+kable(placebo_table, align = c("l", "r"))
+```
+
+The placebo results are informative. In the real data, the same-day coefficient is `r fmt_num(observed_mobile_coef, 2)`. Under within-date shuffling, the coefficient distribution is centred near `r fmt_num(mean(placebo_shuffle_coefs), 2)` with a 95th percentile of only `r fmt_num(stats::quantile(placebo_shuffle_coefs, 0.95), 2)`, and none of the shuffled coefficients reach the observed estimate (`r fmt_pct(placebo_exceed_share, 1)` do so). This is exactly what a useful falsification should show: once the correct site-page matching is broken, the main effect disappears.
+
+The rotated-site placebo is more demanding because it preserves each date's information environment and only reassigns site series. Its coefficient, `r format_fixest_term(m_rotated_placebo, "pv_user_mobile_rotated")`, is still positive, but it is only about `r fmt_num(placebo_rotation_ratio, 2)` of the observed coefficient. The right interpretation is that some city-wide or cross-site information is shared across places, but the correct site-level alignment remains crucial for the magnitude of the main result.
+
+```{r placebo-plot}
+placebo_distribution <- tibble(coefficient = placebo_shuffle_coefs)
+
+ggplot(placebo_distribution, aes(x = coefficient)) +
+  geom_histogram(bins = 30, fill = "#95d5b2", color = "white") +
+  geom_vline(xintercept = observed_mobile_coef, color = "#8d0801", linewidth = 1) +
+  labs(
+    title = "Permutation placebo: shuffled site mobile coefficients",
+    subtitle = "The red line is the observed same-day coefficient",
+    x = "Placebo coefficient",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The histogram makes the placebo logic visual. The shuffled coefficients cluster close to zero, while the observed coefficient lies far in the right tail. This is stronger evidence than a single alternative regression because it shows that the main estimate is not easy to reproduce once the site-page relationship is scrambled.
+
+# Timing: Same Day Versus Nearby Days
+
+```{r estimate-short-timing}
+# Compare same-day mobile traffic to the immediate lag and lead.
+m_lag_only <- feols(
+  nombre_entrees ~ mobile_lag1 | lieu + date,
+  data = df |>
+    filter(!is.na(mobile_lag1)),
+  panel.id = ~ lieu + date
+)
+
+m_lead_only <- feols(
+  nombre_entrees ~ mobile_lead1 | lieu + date,
+  data = df |>
+    filter(!is.na(mobile_lead1)),
+  panel.id = ~ lieu + date
+)
+
+m_timing_local <- feols(
+  nombre_entrees ~ pv_user_mobile + mobile_lag1 + mobile_lead1 | lieu + date,
+  data = df |>
+    filter(!is.na(mobile_lag1), !is.na(mobile_lead1)),
+  panel.id = ~ lieu + date
+)
+
+timing_table <- tibble(
+  model = c(
+    "Same-day mobile only",
+    "Lagged mobile only (t-1)",
+    "Lead mobile only (t+1)",
+    "Joint timing model"
+  ),
+  same_day_mobile = c(
+    format_fixest_term(m_same_day, "pv_user_mobile"),
+    "",
+    "",
+    format_fixest_term(m_timing_local, "pv_user_mobile")
+  ),
+  lagged_mobile = c(
+    "",
+    format_fixest_term(m_lag_only, "mobile_lag1"),
+    "",
+    format_fixest_term(m_timing_local, "mobile_lag1")
+  ),
+  lead_mobile = c(
+    "",
+    "",
+    format_fixest_term(m_lead_only, "mobile_lead1"),
+    format_fixest_term(m_timing_local, "mobile_lead1")
+  ),
+  r2 = c(
+    fmt_r2(m_same_day, "r2"),
+    fmt_r2(m_lag_only, "r2"),
+    fmt_r2(m_lead_only, "r2"),
+    fmt_r2(m_timing_local, "r2")
+  ),
+  within_r2 = c(
+    fmt_r2(m_same_day, "wr2"),
+    fmt_r2(m_lag_only, "wr2"),
+    fmt_r2(m_lead_only, "wr2"),
+    fmt_r2(m_timing_local, "wr2")
+  ),
+  observations = c(
+    nobs(m_same_day),
+    nobs(m_lag_only),
+    nobs(m_lead_only),
+    nobs(m_timing_local)
+  )
+) |>
+  mutate(observations = fmt_num(observations, 0))
+
+timing_same_day_ratio_lag <- fixest::coeftable(m_timing_local, vcov = "DK")["pv_user_mobile", 1] /
+  fixest::coeftable(m_timing_local, vcov = "DK")["mobile_lag1", 1]
+timing_same_day_ratio_lead <- fixest::coeftable(m_timing_local, vcov = "DK")["pv_user_mobile", 1] /
+  fixest::coeftable(m_timing_local, vcov = "DK")["mobile_lead1", 1]
+
+kable(timing_table, align = c("l", rep("r", 6)))
+```
+
+This section is important for interpretation. If same-day pageviews merely proxy for a general popularity trend, then nearby lags and leads may look almost identical. If, by contrast, same-day mobile traffic is genuinely closer to real-time visit behaviour, its coefficient should dominate once the adjacent days are included jointly.
+
+That is why the joint timing model matters more than the separate one-variable regressions. The separate models tell us that nearby days are informative. The joint model tells us whether same-day mobile traffic is the most informative among them. In this report, the comparison is `r format_fixest_term(m_timing_local, "pv_user_mobile")` versus `r format_fixest_term(m_timing_local, "mobile_lag1")` and `r format_fixest_term(m_timing_local, "mobile_lead1")`. The same-day coefficient is about `r fmt_num(timing_same_day_ratio_lag, 2)` times the lag coefficient and `r fmt_num(timing_same_day_ratio_lead, 2)` times the lead coefficient, so the timing evidence points clearly toward day 0 rather than an equally broad window.
+
+# Distributed Lead/Lag Profile from -30 to +30 Days
+
+```{r estimate-full-lead-lag}
+# Build a full distributed timing profile around the attendance day.
+lead_lag_window <- params$lead_lag_window
+lead_lag_terms_vec <- lead_lag_terms(prefix = "site_mobile", window = lead_lag_window)
+
+df_lead_lag <- add_lead_lag_columns(
+  df = df,
+  var = "pv_user_mobile",
+  window = lead_lag_window,
+  prefix = "site_mobile"
+)
+
+lead_lag_formula <- as.formula(
+  paste(
+    "nombre_entrees ~",
+    paste(lead_lag_terms_vec, collapse = " + "),
+    "| lieu + date"
+  )
+)
+
+lead_lag_model <- feols(
+  lead_lag_formula,
+  data = df_lead_lag,
+  panel.id = ~ lieu + date
+)
+
+lead_lag_plot_df <- extract_fixest_terms(
+  model = lead_lag_model,
+  terms = lead_lag_terms_vec,
+  vcov = "DK"
+) |>
+  mutate(relative_day = seq(-lead_lag_window, lead_lag_window))
+
+lead_lag_peak_day <- lead_lag_plot_df$relative_day[which.max(lead_lag_plot_df$estimate)]
+lead_lag_peak_coef <- max(lead_lag_plot_df$estimate, na.rm = TRUE)
+lead_lag_day_m1 <- lead_lag_plot_df$estimate[lead_lag_plot_df$relative_day == -1]
+lead_lag_day_0 <- lead_lag_plot_df$estimate[lead_lag_plot_df$relative_day == 0]
+lead_lag_day_p1 <- lead_lag_plot_df$estimate[lead_lag_plot_df$relative_day == 1]
+
+lead_lag_local_table <- lead_lag_plot_df |>
+  filter(relative_day >= -5, relative_day <= 5) |>
+  transmute(
+    relative_day,
+    estimate = fmt_num(estimate, 2),
+    std_error = fmt_num(std_error, 2),
+    ci_low = fmt_num(conf_low, 2),
+    ci_high = fmt_num(conf_high, 2)
+  )
+
+kable(lead_lag_local_table, align = c("r", rep("r", 4)))
+```
+
+The local table around day 0 gives a compact view of the coefficients that matter most for interpretation. If the profile peaks sharply at day 0 and falls away on both sides, then pageviews behave like a concentrated same-day signal. If the pattern is broad and flat, then pageviews are closer to a general attention measure that moves before and after the visit.
+
+```{r lead-lag-plot}
+ggplot(lead_lag_plot_df, aes(x = relative_day, y = estimate)) +
+  geom_hline(yintercept = 0, color = "grey70", linewidth = 0.5) +
+  geom_ribbon(aes(ymin = conf_low, ymax = conf_high), fill = "#95d5b2", alpha = 0.35) +
+  geom_line(color = "#1b4332", linewidth = 0.9) +
+  geom_point(color = "#1b4332", size = 1.5) +
+  geom_vline(xintercept = 0, color = "#8d0801", linetype = "dashed", linewidth = 0.7) +
+  scale_x_continuous(breaks = seq(-lead_lag_window, lead_lag_window, by = 5)) +
+  labs(
+    title = "Distributed timing profile of site mobile pageviews",
+    subtitle = "Coefficient estimates from -30 to +30 days around the attendance day",
+    x = "Relative day of site mobile pageviews",
+    y = "Coefficient on site mobile pageviews"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+This graph is the most transparent timing diagnostic in the report. The red dashed line marks the same day. In the current estimates, the largest coefficient occurs at relative day `r lead_lag_peak_day` with an estimate of about `r fmt_num(lead_lag_peak_coef, 2)`. Around the peak, the pattern is `r fmt_num(lead_lag_day_m1, 2)` at day `-1`, `r fmt_num(lead_lag_day_0, 2)` at day `0`, and `r fmt_num(lead_lag_day_p1, 2)` at day `+1`. This is not a flat pattern: the centre of gravity is clearly on the attendance day itself.
+
+That nuance matters. The report is not trying to claim that pageviews are a perfect measure of physical presence. It is testing whether they help track it in real time. A strong day-0 spike with some nearby spillovers is fully consistent with that more modest claim.
+
+# Nowcasting: Out-of-Sample Holdout
+
+```{r holdout-nowcast}
+# Reserve the last N days of the sample as an out-of-sample test set.
+holdout_dates <- sort(unique(df$date))
+holdout_start <- holdout_dates[max(1, length(holdout_dates) - params$nowcast_test_days + 1)]
+
+train_df <- df |>
+  filter(date < holdout_start)
+test_df <- df |>
+  filter(date >= holdout_start)
+
+holdout_models <- fit_nowcast_models(train_df)
+holdout_predictions <- predict_nowcast_models(holdout_models, test_df)
+
+test_df_pred <- bind_cols(test_df, holdout_predictions)
+
+holdout_nowcast_raw <- bind_rows(
+  score_predictions(test_df_pred$nombre_entrees, test_df_pred$pred_calendar) |>
+    mutate(model = "Calendar + city controls"),
+  score_predictions(test_df_pred$nombre_entrees, test_df_pred$pred_lag_only) |>
+    mutate(model = "Lagged mobile + lagged desktop"),
+  score_predictions(test_df_pred$nombre_entrees, test_df_pred$pred_same_day_mobile) |>
+    mutate(model = "Same-day mobile"),
+  score_predictions(test_df_pred$nombre_entrees, test_df_pred$pred_same_day_mobile_desktop) |>
+    mutate(model = "Same-day mobile + desktop")
+) |>
+  mutate(test_start = format(holdout_start, "%Y-%m-%d"))
+
+best_holdout_model <- holdout_nowcast_raw$model[which.min(holdout_nowcast_raw$rmse)]
+holdout_gain_vs_calendar <- holdout_nowcast_raw$rmse[holdout_nowcast_raw$model == "Calendar + city controls"] -
+  holdout_nowcast_raw$rmse[holdout_nowcast_raw$model == "Same-day mobile + desktop"]
+holdout_gain_vs_lag <- holdout_nowcast_raw$rmse[holdout_nowcast_raw$model == "Lagged mobile + lagged desktop"] -
+  holdout_nowcast_raw$rmse[holdout_nowcast_raw$model == "Same-day mobile + desktop"]
+holdout_gap_top_two <- sort(holdout_nowcast_raw$rmse)[2] - sort(holdout_nowcast_raw$rmse)[1]
+
+holdout_nowcast <- holdout_nowcast_raw |>
+  arrange(rmse) |>
+  mutate(
+    rmse = fmt_num(rmse, 2),
+    mae = fmt_num(mae, 2),
+    correlation = fmt_num(correlation, 3)
+) |>
+  select(model, n, rmse, mae, correlation, test_start)
+
+kable(
+  holdout_nowcast,
+  col.names = c("Model", "N", "RMSE", "MAE", "Corr(actual, predicted)", "Test start"),
+  align = c("l", rep("r", 5))
+)
+```
+
+The holdout exercise answers a predictive question rather than a structural one: if we stand near the end of the sample and forecast the last `r params$nowcast_test_days` days using only data available before that period, which model performs best?
+
+This is the cleanest test of practical usefulness. A significant within-day coefficient is interesting, but it does not automatically imply out-of-sample gains. Here the lowest-RMSE model is `r best_holdout_model`, but the margin over the second-best model is only `r fmt_num(holdout_gap_top_two, 2)` RMSE points, so the two same-day specifications are essentially tied. The important contrast is against the simpler baselines: relative to the calendar benchmark, the richer same-day specification lowers RMSE by about `r fmt_num(holdout_gain_vs_calendar, 2)` attendance units, and it improves on the lag-only benchmark by about `r fmt_num(holdout_gain_vs_lag, 2)` units.
+
+# Holdout Performance by Site
+
+```{r holdout-by-place}
+# The average gain may hide site heterogeneity, so we also score the
+# holdout models separately for each place.
+holdout_place_raw <- test_df_pred |>
+  group_by(lieu) |>
+  summarise(
+    rmse_calendar = sqrt(mean((nombre_entrees - pred_calendar)^2, na.rm = TRUE)),
+    rmse_same_day_mobile = sqrt(mean((nombre_entrees - pred_same_day_mobile)^2, na.rm = TRUE)),
+    rmse_same_day_mobile_desktop = sqrt(mean((nombre_entrees - pred_same_day_mobile_desktop)^2, na.rm = TRUE)),
+    gain_vs_calendar = rmse_calendar - rmse_same_day_mobile_desktop,
+    corr_same_day_mobile_desktop = safe_cor(nombre_entrees, pred_same_day_mobile_desktop),
+    .groups = "drop"
+  ) |>
+  arrange(desc(gain_vs_calendar))
+
+holdout_sites_improved <- sum(holdout_place_raw$gain_vs_calendar > 0, na.rm = TRUE)
+
+holdout_place <- holdout_place_raw |>
+  mutate(across(-lieu, ~ fmt_num(.x, 2)))
+
+kable(holdout_place, align = c("l", rep("r", 5)))
+```
+
+This table shows whether the predictive gain is broad-based or concentrated in only one or two sites. In the current holdout, the same-day mobile-plus-desktop model improves RMSE relative to the calendar benchmark in `r holdout_sites_improved` out of `r n_places` sites. That makes the predictive gain more convincing than a result driven by only one standout place.
+
+In a small-sample application like this one, that distinction matters a lot. One unusually well-tracked site can otherwise dominate the overall nowcasting result.
+
+# Where RMSE Improves Most
+
+```{r holdout-rmse-diagnostics}
+# RMSE is an average loss function, so it can hide where the prediction
+# gain is coming from. These diagnostics split the holdout by calendar
+# context and by ex ante baseline predictability.
+test_df_pred <- add_baseline_predictability(
+  train_df = train_df,
+  test_df = test_df_pred,
+  models = holdout_models
+)
+
+holdout_dow_rmse_raw <- score_nowcast_groups(test_df_pred, "dow") |>
+  arrange(dow)
+
+holdout_month_rmse_raw <- test_df_pred |>
+  mutate(test_month = format(date, "%Y-%m")) |>
+  score_nowcast_groups("test_month") |>
+  arrange(test_month)
+
+holdout_predictability_rmse_raw <- score_nowcast_groups(test_df_pred, "baseline_predictability") |>
+  arrange(baseline_predictability)
+
+dow_best_gain <- holdout_dow_rmse_raw |>
+  slice_max(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+dow_worst_gain <- holdout_dow_rmse_raw |>
+  slice_min(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+month_best_gain <- holdout_month_rmse_raw |>
+  slice_max(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+month_worst_gain <- holdout_month_rmse_raw |>
+  slice_min(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+predictability_best_gain <- holdout_predictability_rmse_raw |>
+  slice_max(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+predictability_worst_gain <- holdout_predictability_rmse_raw |>
+  slice_min(order_by = gain_vs_calendar, n = 1, with_ties = FALSE)
+
+holdout_dow_rmse <- holdout_dow_rmse_raw |>
+  format_rmse_diagnostic()
+
+kable(
+  holdout_dow_rmse,
+  col.names = c(
+    "Day of week", "N", "Mean attendance", "Calendar RMSE", "Lag RMSE",
+    "Same-day mobile RMSE", "Same-day mobile + desktop RMSE",
+    "Gain vs calendar", "% gain vs calendar"
+  ),
+  align = c("l", rep("r", 8))
+)
+```
+
+The weekday split tests whether Wikipedia is more useful on regular days or on days where cultural attendance is harder for calendar controls to summarize. The largest RMSE gain is on `r as.character(dow_best_gain$dow)`, where the same-day mobile-plus-desktop model reduces RMSE by `r fmt_num(dow_best_gain$gain_vs_calendar, 2)` attendance units relative to the calendar benchmark. The weakest gain is on `r as.character(dow_worst_gain$dow)`, where the gain is `r fmt_num(dow_worst_gain$gain_vs_calendar, 2)`. This matters operationally: if a venue has strong weekday routines, a calendar model can already do much of the work; Wikipedia becomes more valuable when daily attendance contains visit-specific information that is not fully predictable from the calendar.
+
+```{r holdout-rmse-by-month}
+holdout_month_rmse <- holdout_month_rmse_raw |>
+  format_rmse_diagnostic()
+
+kable(
+  holdout_month_rmse,
+  col.names = c(
+    "Test month", "N", "Mean attendance", "Calendar RMSE", "Lag RMSE",
+    "Same-day mobile RMSE", "Same-day mobile + desktop RMSE",
+    "Gain vs calendar", "% gain vs calendar"
+  ),
+  align = c("l", rep("r", 8))
+)
+```
+
+The monthly split is a stability test. If the improvement appears only in one month, the nowcasting result should be treated as episodic rather than systematic. In this holdout, the largest monthly gain occurs in `r month_best_gain$test_month`, with an RMSE reduction of `r fmt_num(month_best_gain$gain_vs_calendar, 2)`, while the weakest month is `r month_worst_gain$test_month`, with a gain of `r fmt_num(month_worst_gain$gain_vs_calendar, 2)`. The real-world implication is straightforward: Wikipedia signals are most useful for short-run monitoring when the month contains irregular demand, special programming, tourism shocks, or reopening/closure patterns that a smooth calendar baseline cannot anticipate.
+
+```{r holdout-rmse-by-baseline-predictability}
+holdout_predictability_rmse <- holdout_predictability_rmse_raw |>
+  format_rmse_diagnostic()
+
+kable(
+  holdout_predictability_rmse,
+  col.names = c(
+    "Baseline predictability", "N", "Mean attendance", "Calendar RMSE", "Lag RMSE",
+    "Same-day mobile RMSE", "Same-day mobile + desktop RMSE",
+    "Gain vs calendar", "% gain vs calendar"
+  ),
+  align = c("l", rep("r", 8))
+)
+```
+
+The baseline-predictability split is the most direct test of when RMSE gains should be expected. The groups are built from training-period calendar-model errors by site and weekday, so the classification is not using the test-period outcome to define difficulty. The same-day model helps most in the `r as.character(predictability_best_gain$baseline_predictability)` group, where it lowers RMSE by `r fmt_num(predictability_best_gain$gain_vs_calendar, 2)`, and helps least in the `r as.character(predictability_worst_gain$baseline_predictability)` group, where the gain is `r fmt_num(predictability_worst_gain$gain_vs_calendar, 2)`. Econometrically, that is the expected pattern if Wikipedia pageviews contain event-day information: they add the least when attendance is already close to a deterministic calendar process, and the most when the baseline leaves larger residual uncertainty.
+
+# Rolling Monthly Nowcasting
+
+```{r rolling-nowcast}
+# Repeat the out-of-sample exercise month by month over the last part
+# of the sample to see whether the ranking is stable.
+monthly_nowcast <- run_monthly_nowcasting(df, n_test_months = params$nowcast_months)
+
+monthly_nowcast_detail <- monthly_nowcast$detail |>
+  mutate(
+    model = factor(
+      model,
+      levels = c(
+        "Calendar + city controls",
+        "Lagged mobile + lagged desktop",
+        "Same-day mobile",
+        "Same-day mobile + desktop"
+      )
+    )
+  )
+
+monthly_nowcast_summary_raw <- monthly_nowcast$summary |>
+  mutate(
+    model = factor(
+      model,
+      levels = c(
+        "Calendar + city controls",
+        "Lagged mobile + lagged desktop",
+        "Same-day mobile",
+        "Same-day mobile + desktop"
+      )
+    )
+  ) |>
+  arrange(mean_rmse)
+
+monthly_best_model <- as.character(monthly_nowcast_summary_raw$model[1])
+monthly_gap_top_two <- monthly_nowcast_summary_raw$mean_rmse[2] - monthly_nowcast_summary_raw$mean_rmse[1]
+
+monthly_nowcast_summary <- monthly_nowcast_summary_raw |>
+  mutate(
+    mean_rmse = fmt_num(mean_rmse, 2),
+    mean_mae = fmt_num(mean_mae, 2),
+    mean_correlation = fmt_num(mean_correlation, 3)
+  )
+
+kable(
+  monthly_nowcast_summary,
+  col.names = c("Model", "Mean RMSE", "Mean MAE", "Mean Corr(actual, predicted)"),
+  align = c("l", rep("r", 3))
+)
+```
+
+The rolling exercise is a stronger predictive check than a single holdout because it asks whether the same model keeps winning in different months. A model can look strong in one terminal holdout simply because that period happened to favour it. Consistent gains across several months are much more informative. In the current summary table, the lowest average RMSE belongs to `r monthly_best_model`, but the gap to the second-best same-day model is only `r fmt_num(monthly_gap_top_two, 2)`, which again suggests that the two same-day nowcasting specifications perform almost identically on average.
+
+```{r rolling-winners}
+# Count how many months each model wins on RMSE.
+monthly_nowcast_winners <- monthly_nowcast_detail |>
+  group_by(test_month) |>
+  slice_min(order_by = rmse, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  count(model, name = "months_won") |>
+  arrange(desc(months_won))
+
+monthly_top_winner <- as.character(monthly_nowcast_winners$model[1])
+monthly_top_wins <- monthly_nowcast_winners$months_won[1]
+monthly_same_day_wins <- sum(monthly_nowcast_winners$months_won[grepl("^Same-day", monthly_nowcast_winners$model)])
+
+kable(
+  monthly_nowcast_winners,
+  col.names = c("Model", "Months won on RMSE"),
+  align = c("l", "r")
+)
+```
+
+The winner count is a simple stability metric. It does not replace the average RMSE table, but it complements it. In this report, `r monthly_top_winner` wins `r monthly_top_wins` out of `r params$nowcast_months` rolling months, and the two same-day models together win `r monthly_same_day_wins` months. That pattern is more informative than a single overall average because it shows that same-day pageviews are not just helpful in one unusually favourable period.
+
+```{r rolling-plot}
+ggplot(monthly_nowcast_detail, aes(x = test_month, y = rmse, color = model, group = model)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  labs(
+    title = "Rolling monthly nowcasting RMSE",
+    x = "Test month",
+    y = "RMSE",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+The monthly RMSE path makes it easy to see whether the ranking is stable or whether the models cross often. Frequent crossing means the value of Wikipedia pageviews is context-dependent. A clear and persistent advantage for the same-day models would be stronger evidence that pageviews are systematically useful for nowcasting.
+
+# Discussion
+
+The analysis speaks to two related but distinct questions.
+
+First, do site-level mobile pageviews behave like a same-day attendance signal once demanding controls are imposed? In this dataset the answer is yes, but the scale should be interpreted carefully. The exact-date fixed-effects level coefficient is `r format_fixest_term(m_same_day, "pv_user_mobile")`; this confirms a strong same-day signal, but it is not a credible literal statement that one additional Wikipedia pageview generates about 19 visitors. The preferred substantive reading comes from the log-log specification, where the mobile coefficient is `r format_fixest_term(m_log, "log_mobile", digits = 4)`.
+
+Second, do those pageviews improve prediction? Here again the answer is yes, but with an important nuance. The same-day models beat the calendar and lag-only baselines both in the terminal holdout and in the rolling monthly exercise, yet the two same-day variants are nearly tied. The practical lesson is therefore that same-day Wikipedia traffic helps, but adding desktop traffic on top of mobile does not materially change the prediction story.
+
+The lead/lag and placebo sections sharpen the interpretation. The coefficient profile peaks at day `r lead_lag_peak_day`, and the shuffled-placebo distribution is centred near zero while the observed coefficient sits far outside it. At the same time, the rotated-site placebo remains positive, which shows that some attention shocks are shared across sites. Taken together, these findings support a middle-ground conclusion: Wikipedia pageviews are a real and useful same-day signal, but not a pure physical-presence measure.
+
+# Limitations
+
+Several limitations should remain explicit.
+
+1. The sample is small: six sites over a limited time span.
+2. Some attendance zeros are likely imputed zeros rather than fully observed zero-footfall days.
+3. The report does not yet include weather, transport disruptions, school holidays, or event calendars.
+4. Wikipedia users are not the same population as site visitors, so measurement error is unavoidable.
+5. The fixed-effects coefficients are informative about signal quality, not a causal effect of pageviews on attendance.
+
+These limitations argue for caution in interpretation, but they do not make the exercise uninformative. They simply define what can and cannot be learned from the available data.
+
+# Reproducibility
+
+This report is self-contained: all helper functions are embedded directly in the source file. It expects the derived Excel workbooks to be available in `data/derived/` and can also accept explicit file paths through the YAML parameters `merged_file` and `wiki_file`.
+
+The main R packages used here are `readxl`, `dplyr`, `tidyr`, `ggplot2`, `fixest`, and `knitr`. The report can be rendered locally with a standard `rmarkdown::render()` call once those dependencies are installed.
+
+```{r session-info}
+# Session metadata is useful for exact replication.
+sessionInfo()
+```
