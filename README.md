@@ -9,7 +9,7 @@
 
 ## Key Results
 
-The preferred specification is a distributed two-way fixed-effects (TWFE)
+The main specification is a distributed two-way fixed-effects (TWFE)
 timing model with Driscoll-Kraay (bandwidth = 30 days) standard errors.
 
 | Wikipedia signal | Coefficient | SE | Significance |
@@ -132,7 +132,7 @@ Writes `outputs/html/loglog_clean_report.html`.
 
 $$y_{it} = \beta\, x_{it} + \rho\, y_{i,t-1} + \alpha_i + \delta_t + \eta_{i,\text{ym}(t)} + \lambda_{i,\text{dow}(t)} + \varepsilon_{it}$$
 
-### Distributed Timing (preferred)
+### Distributed Timing
 
 $$y_{it} = \sum_{k=-30}^{30} \beta_k\, x_{i,t+k} + \rho\, y_{i,t-1} + \alpha_i + \delta_t + \eta_{i,\text{ym}(t)} + \lambda_{i,\text{dow}(t)} + \varepsilon_{it}$$
 
